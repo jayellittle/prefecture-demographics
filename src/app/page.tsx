@@ -1,102 +1,136 @@
-import Image from "next/image";
+"use client"
+
+import { useEffect, useState } from "react";
+import PrefectureCheckbox from "@/components/PrefectureCheckbox";
+import { Prefecture } from "@/types/prefecture";
+import { POPULATION_TYPES, PopulationDataMap } from "@/types/population";
+import PopulationGraph from "@/components/PopulationGraph";
 
 export default function Home() {
-  return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm/6 text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-[family-name:var(--font-geist-mono)] font-semibold">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+  const [prefectures, setPrefectures] = useState<Prefecture[]>([]);
+  const [selectedPrefectures, setSelectedPrefectures] = useState<number[]>([]);
+  const [selectedPopulationType, setSelectedPopulationType] = useState<number>(0);
+  const [populationData, setPopulationData] = useState<PopulationDataMap>({});
+  const [loading, setLoading] = useState<boolean>(true);
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
+  useEffect(() => {
+    const fetchPrefectures = async () => {
+      try {
+        const response = await fetch("/api/prefectures");
+        if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
+
+        const data = await response.json();
+        setPrefectures(data.result);
+        setLoading(false);
+      } catch (error) {
+        console.error("Cannot fetch prefecture data:", error);
+      }
+    };
+
+    fetchPrefectures();
+  }, []);
+
+  useEffect(() => {
+    const fetchSelectedPrefectureData = async () => {
+      for (const code of selectedPrefectures) {
+        await fetchPrefecturePopulationData(code);
+      }
+    };
+
+    if (selectedPrefectures.length > 0) {
+      fetchSelectedPrefectureData();
+    }
+  }, [selectedPopulationType, selectedPrefectures])
+
+  const handlePrefectureSelect = async (prefCode: number, checked: boolean) => {
+    if (checked) {
+      setSelectedPrefectures([...selectedPrefectures, prefCode]);
+      await fetchPrefecturePopulationData(prefCode);
+    } else {
+      setSelectedPrefectures(selectedPrefectures.filter(code => code !== prefCode));
+    }
+  };
+
+  const handlePopulationTypeChange = (typeId: number) => {
+    setSelectedPopulationType(typeId);
+  };
+
+  const fetchPrefecturePopulationData = async (prefCode: number) => {
+    try {
+      const response = await fetch(`/api/population?prefCode=${prefCode}`);
+      if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
+
+      const data = await response.json();
+      const populationTypeData = data.result.data[selectedPopulationType]?.data || [];
+
+      setPopulationData(prevData => ({
+        ...prevData,
+        [prefCode]: populationTypeData
+      }));
+    } catch (error) {
+      console.error(`Cannot fetch population data:`, error);
+    }
+  };
+
+  if (loading) return <div className="text-center p-8 text-gray-600">Loading data...</div>
+
+  return (
+    <div className="grid grid-rows-3 grid-cols-1 min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
+      <main>
+        <h1 className="text-5xl font-extrabold py-6 justify-items-center">
+          都道府県の人口推移
+        </h1>
+        <div className="mb-6">
+          <h2 className="text-xl font-extrabold py-3">
+            都道府県を選択
+          </h2>
+          <div className="flex flex-wrap">
+            {prefectures.map(pref => (
+              <PrefectureCheckbox
+                key={pref.prefCode}
+                prefecture={pref}
+                onSelectChange={handlePrefectureSelect}
+              />
+            ))}
+          </div>
+        </div>
+        <div className="mb-6">
+          <h2 className="text-xl font-extrabold py-3">
+            表示する人口構成を選択
+          </h2>
+          <div className="flex flex-wrap">
+            {POPULATION_TYPES.map(type => (
+              <label key={type.id} className="px-1.5 py-1">
+                <input
+                  type="radio"
+                  name="populationType"
+                  value={type.value}
+                  checked={selectedPopulationType === type.id}
+                  onChange={() => handlePopulationTypeChange(type.id)}
+                />
+                {type.label}
+              </label>
+            ))}
+          </div>
+        </div>
+        <div className="mb-6">
+          <h2 className="text-xl font-extrabold py-3">
+            人口推移グラフ
+          </h2>
+          {selectedPrefectures.length > 0 ? (
+            <PopulationGraph
+              prefectures={prefectures}
+              selectedPrefectures={selectedPrefectures}
+              populationData={populationData}
+              populationTypeName={POPULATION_TYPES[selectedPopulationType].label}
             />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+          ) : (
+            <p className="text-center p-8 text-gray-600">グラフを表示する都道府県を選んでください。</p>
+          )}
         </div>
       </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
+      <footer className="flex flex-1 p-8 border-t-1 justify-center align-middle">
+        <p>都道府県の人口推移</p>
       </footer>
     </div>
   );
